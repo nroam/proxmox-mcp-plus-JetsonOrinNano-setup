@@ -1,7 +1,7 @@
-# Proxmox chat assistant on a Jetson (Ollama + Open WebUI + ProxmoxMCP-Plus)
+# Proxmox chat assistant on a Jetson Orin Nano (Ollama + Open WebUI + ProxmoxMCP-Plus)
 
-A working recipe for running a local, GPU-accelerated LLM chat interface against
-a Proxmox VE cluster on an NVIDIA Jetson (Orin Nano and similar), using:
+A working recipe for running a local, GPU-accelerated LLM chat interface on an NVIDIA Jetson Orin Nano against
+a separate Proxmox VE cluster, using:
 
 - **[Ollama](https://ollama.com)** — local LLM inference, GPU-accelerated
 - **[Open WebUI](https://github.com/open-webui/open-webui)** — chat interface with MCP tool-calling support
