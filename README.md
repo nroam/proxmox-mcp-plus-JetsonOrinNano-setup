@@ -1,0 +1,74 @@
+# Proxmox chat assistant on a Jetson (Ollama + Open WebUI + ProxmoxMCP-Plus)
+
+A working recipe for running a local, GPU-accelerated LLM chat interface against
+a Proxmox VE cluster on an NVIDIA Jetson (Orin Nano and similar), using:
+
+- **[Ollama](https://ollama.com)** — local LLM inference, GPU-accelerated
+- **[Open WebUI](https://github.com/open-webui/open-webui)** — chat interface with MCP tool-calling support
+- **[ProxmoxMCP-Plus](https://github.com/RekklesNA/ProxmoxMCP-Plus)** — MCP server exposing Proxmox VE as callable tools
+
+This isn't just a happy-path install guide. Getting a small (7B-class) local
+model to reliably call Proxmox tools through this stack surfaced a number of
+non-obvious bugs and gotchas — those are documented in
+[`docs/06-troubleshooting.md`](docs/06-troubleshooting.md) in detail, since
+that's likely the most valuable part if you're already partway through your
+own setup and stuck.
+
+## Quick start
+
+1. [Prerequisites](docs/01-prerequisites.md)
+2. [Create a scoped Proxmox API token](docs/02-proxmox-api-token.md)
+3. [Build and run ProxmoxMCP-Plus](docs/03-build-proxmoxmcp-plus.md)
+4. [Set up Ollama](docs/04-ollama-setup.md)
+5. [Wire it into Open WebUI](docs/05-open-webui-wiring.md)
+6. Hit a problem? Check [Troubleshooting](docs/06-troubleshooting.md) first.
+
+## Architecture
+
+```
+┌─────────────┐      MCP Streamable HTTP      ┌──────────────────┐      Proxmox API
+│  Open WebUI │ ────────────────────────────► │  ProxmoxMCP-Plus │ ────────────────►  Proxmox VE
+│  (chat UI)  │ ◄──────────────────────────── │   (MCP server)   │ ◄────────────────  cluster
+└─────────────┘                                └──────────────────┘
+       │
+       │ Ollama API
+       ▼
+┌─────────────┐
+│   Ollama    │
+│ (local LLM) │
+└─────────────┘
+```
+
+Everything runs on the Jetson itself: Ollama as a native systemd service (for
+GPU access), Open WebUI and ProxmoxMCP-Plus as Docker containers.
+
+## What this gets you
+
+A chat window where you can ask things like "are there any issues with my
+containers?" or "what's the storage usage across the cluster?" and get answers
+backed by live Proxmox data, with the LLM deciding which read-only Proxmox
+tools to call.
+
+Mutating tools (create/delete/start/stop VMs and containers, snapshots,
+backups) are supported by ProxmoxMCP-Plus itself but **deliberately excluded**
+from the chat tool set in this guide — see
+[`docs/05-open-webui-wiring.md`](docs/05-open-webui-wiring.md) for why, and
+how to add them back if you want that.
+
+## Status / limitations
+
+Honest summary, expanded on in the troubleshooting doc:
+
+- Tool *selection* by a small (7B-class) quantized model is imperfect for
+  open-ended questions. It's reliable when you name the area you're asking
+  about ("check container status") and occasionally picks a less relevant
+  tool for vague questions ("any issues?").
+- The MCP protocol layer, tool execution, and Proxmox data retrieval have all
+  been extensively verified reliable — the remaining rough edges are in LLM
+  reasoning quality and in a couple of specific Open WebUI bugs (documented).
+- Tested on an 8GB Jetson Orin Nano — memory is genuinely tight at that size;
+  see the troubleshooting doc for what that means in practice.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use, adapt, and share freely.
