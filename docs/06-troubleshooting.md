@@ -27,20 +27,24 @@ the network, or your API token, and look upstream in the chain instead.
 
 ---
 
-## OpenAPI vs MCP connection types {#openapi-vs-mcp}
+## OpenAPI vs MCP
 
 **Symptom**: tool server shows "Connection success" in Open WebUI, tool
 schema is visible, but chat responses never actually call any tool — the
 model just says it doesn't have access, or hallucinates an answer.
 
-**Cause**: Open WebUI supports two connection types for external tool
-servers — "OpenAPI" and "MCP Streamable HTTP". In the version tested here,
-only `server:mcp:`-prefixed tool IDs get resolved into a live protocol
-client at chat-request time; an OpenAPI-type connection's tool definitions
-never make it into the actual request sent to the model, despite the
-connection testing successfully and its schema being fetchable.
+**Observed cause on the tested stack**: Open WebUI supports two connection
+types for external tool servers — "OpenAPI" and "MCP Streamable HTTP". On
+Open WebUI `0.11.1` with the guide's Ollama configuration, only
+`server:mcp:`-prefixed tool IDs were observed resolving into a live protocol
+client at chat-request time. The OpenAPI connection's tool definitions did not
+reach the model even though its schema was fetchable and the connection test
+succeeded. Open WebUI officially supports OpenAPI tools, so treat this as a
+version- and environment-specific observation rather than a universal product
+limitation.
 
-**Fix**: use MCP Streamable HTTP as the connection type (see
+**Workaround verified by the author**: use MCP Streamable HTTP as the
+connection type (see
 [`05-open-webui-wiring.md`](05-open-webui-wiring.md)), pointed at
 ProxmoxMCP-Plus's `mcp-http` mode (port 8000, path `/mcp`), not the OpenAPI
 bridge (port 8811).
@@ -53,7 +57,10 @@ list is empty, this is it.
 
 ---
 
-## Native function calling drops the final response {#native-function-calling}
+## Native function calling
+
+**Tested versions**: Open WebUI `0.11.1`, Ollama `0.32.14`. Re-test after an
+upgrade because native tool handling changes frequently.
 
 **Symptom**: a tool call visibly succeeds (you see "View Result from
 `<tool>`" with real data), but the chat message that follows is empty. No
@@ -68,7 +75,8 @@ direct replay produced a complete, correct response. This isolates the bug
 to Open WebUI's own handling of the response stream specifically for
 native/structured tool calling, not the model or Ollama.
 
-**Fix**: set **Function Calling: Legacy** for the model in Open WebUI
+**Workaround verified by the author**: set **Function Calling: Legacy** for
+the model in Open WebUI
 (Admin Panel → Settings → Models → your model → Advanced Params). Legacy
 mode has the model emit tool calls as part of its own text generation
 (parsed via prompt template) rather than relying on Ollama's structured
@@ -88,7 +96,7 @@ it; it doesn't fix the underlying issue.
 
 ---
 
-## Qwen3 causes runaway, non-terminating generation {#qwen3-runaway-generation}
+## Qwen3 runaway generation
 
 **Symptom**: with a Qwen3 model (tested: 4B and 8B) and tools enabled,
 generation runs for many minutes, GPU/CPU stays pegged, and the process
@@ -97,8 +105,8 @@ never completes on its own — eventually needs to be killed
 '{"model":"...","keep_alive":0}'`, or as a last resort a service restart if
 even that doesn't respond).
 
-**Cause** (best available diagnosis at time of writing — may be fixed in
-newer Ollama releases): Ollama 0.32.14 substitutes its own generic ChatML
+**Cause** (best available diagnosis for Ollama `0.32.14` — may be fixed in
+newer releases): Ollama substitutes its own generic ChatML
 tool-calling template for any request that includes tool definitions,
 instead of rendering the model's own bundled Jinja template — visible via
 `ollama show <model> --modelfile` (shows the real template) versus the
@@ -125,7 +133,7 @@ ollama` (or equivalent for your init system).
 
 ---
 
-## Memory pressure {#memory-pressure}
+## Memory pressure
 
 **Symptom**: variable, often confusing — slow responses, requests that time
 out, or a process that never completes and pegs CPU without using the GPU
@@ -155,7 +163,7 @@ what the actual symptom looked like.
 
 ---
 
-## Tool-selection quality with many tools {#tool-selection-quality}
+## Tool-selection quality
 
 **Symptom**: correct data is available, the model has the right tool
 available, but it doesn't call it — instead it either answers vaguely, or
@@ -191,7 +199,7 @@ choice in [`04-ollama-setup.md`](04-ollama-setup.md).
 
 ---
 
-## Baked-in env vars in a custom Docker build {#baked-in-env-vars}
+## Baked-in env vars
 
 **Symptom**: after editing `Dockerfile` (e.g. to change the default run
 mode for convenience) and rebuilding, one of the two ProxmoxMCP-Plus
@@ -215,7 +223,7 @@ image-level defaults.
 
 ---
 
-## Shared config file's `mcp.transport` setting {#shared-config-transport}
+## Shared config transport
 
 **Symptom**: after changing `config.json`'s `mcp.transport` to
 `STREAMABLE_HTTP` (e.g. while trying to get the `mcp-http` service working),

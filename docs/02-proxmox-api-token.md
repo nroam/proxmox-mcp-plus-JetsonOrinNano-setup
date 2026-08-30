@@ -1,53 +1,57 @@
 # Create a scoped Proxmox API token
 
-Run these on the Proxmox host (or any node with `pveum` available), replacing
-placeholders as noted.
+Run these on the Proxmox host (or any node with `pveum` available). This guide
+starts with the built-in read-only `PVEAuditor` role because the chat tool set
+in the later steps is deliberately read-only.
 
 ```bash
-# A role covering read-only inventory/status/logs plus (optionally) common
-# power-management actions. Start read-only-only if you're cautious — see
-# note below.
-pveum role add MCP-Operator -privs \
-  "VM.Audit VM.PowerMgmt VM.Config.Disk VM.Snapshot Datastore.Audit Sys.Audit"
-
 pveum user add mcp-agent@pve
-
-pveum acl modify / -user mcp-agent@pve -role MCP-Operator
-
-pveum user token add mcp-agent@pve mcp-token --privsep 0
+pveum user token add mcp-agent@pve mcp-token --privsep 1
+pveum acl modify / -token 'mcp-agent@pve!mcp-token' -role PVEAuditor
+pveum acl modify / -user mcp-agent@pve -role PVEAuditor
 ```
 
-The last command prints a token value **once** — save it immediately, it
-can't be retrieved again (you'd have to regenerate it).
+The `pveum user token add` command prints a token value **once** — save it
+immediately. It can't be retrieved again; you would have to regenerate it.
 
 ## Privilege notes
 
-- `--privsep 0` disables privilege separation for the token, meaning it
-  inherits the full privileges of the role granted at `/`. This is simpler
-  for a single-purpose assistant token; if you want tighter scoping, look
-  into Proxmox's token privilege separation instead.
-- **Start minimal.** The role above deliberately excludes anything that lets
-  the token read syslogs or guest firewall logs (`Sys.Syslog`, `VM.Console`).
-  If you want the assistant to have access to those tools, add them later:
+- Proxmox API-token permissions are always a subset of the backing user's
+  permissions. With `--privsep 1`, both the user and token ACLs matter; the
+  commands above grant the same read-only role to each. Verify the result:
 
   ```bash
-  pveum role modify MCP-Operator -privs \
-    "VM.Audit VM.PowerMgmt VM.Config.Disk VM.Snapshot Datastore.Audit Sys.Audit Sys.Syslog VM.Console"
+  pveum user permissions mcp-agent@pve
+  pveum user token permissions mcp-agent@pve mcp-token
   ```
 
-  Be aware `VM.Console` grants interactive console *viewing* access, not
-  just log reading — it's a meaningfully bigger grant than "read logs"
-  implies, because Proxmox's guest firewall-log API endpoint happens to
-  check this privilege rather than a narrower audit-only one.
-- If you only want the assistant to answer questions (no VM/container
-  power actions even in principle), drop `VM.PowerMgmt` — the tool-level
-  curation in [`05-open-webui-wiring.md`](05-open-webui-wiring.md) is what
-  actually controls what the *chat* can invoke, but keeping the underlying
-  token's privileges minimal too is defense in depth.
+  See Proxmox's official
+  [Administration Guide](https://pve.proxmox.com/pve-docs/pve-admin-guide.pdf),
+  section "Limited API Token for Monitoring", for the
+  permission-intersection model.
+
+- `PVEAuditor` intentionally does not grant VM power, disk configuration,
+  snapshot, console, or syslog privileges. Some read-only ProxmoxMCP-Plus
+  tools will therefore return permission errors. Add only the exact extra
+  privileges required for a chosen tool after reviewing the upstream
+  [API & Tool Reference](https://github.com/RekklesNA/ProxmoxMCP-Plus/blob/main/docs/wiki/API%20%26%20Tool%20Reference.md).
+- Open WebUI's Function Name Filter List controls which schemas the model can
+  see. It is not an authorization boundary. Proxmox RBAC remains the backend
+  enforcement layer if another authenticated MCP client calls a tool directly.
 
 ## What you should have afterwards
 
 - A token ID in the form `mcp-agent@pve!mcp-token`
-- A token value (a UUID-like string) — this is your `PROXMOX_API_KEY` /
-  `token_value` for the next steps. Treat it like a password: don't commit
-  it anywhere, including this repo if you fork it for your own notes.
+- A token value (a UUID-like string) — this goes only in
+  `auth.token_value` in the ProxmoxMCP-Plus config. Treat it like a password:
+  don't commit it anywhere, including this repo if you fork it for your own
+  notes.
+
+Do not confuse the Proxmox token value with the two independent frontend
+secrets created later:
+
+| Secret | What it protects |
+|---|---|
+| `auth.token_value` | Authentication from ProxmoxMCP-Plus to Proxmox VE |
+| `MCP_API_KEY` | Bearer authentication for native MCP HTTP on port `8000` |
+| `PROXMOX_API_KEY` | Bearer authentication for the OpenAPI bridge on port `8811` |

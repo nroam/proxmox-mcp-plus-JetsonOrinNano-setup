@@ -3,10 +3,13 @@
 ## 1. Run Open WebUI
 
 ```bash
+export WEBUI_SECRET_KEY=$(openssl rand -hex 32)
+
 docker run -d --name open-webui --restart always \
   --network host \
   -e PORT=3000 \
   -e OLLAMA_BASE_URL=http://127.0.0.1:11434 \
+  -e WEBUI_SECRET_KEY="$WEBUI_SECRET_KEY" \
   -v open-webui:/app/backend/data \
   ghcr.io/open-webui/open-webui:0.11.1
 ```
@@ -22,11 +25,16 @@ Notes:
   make your setup reproducible, which matters a lot when you're debugging
   LLM flakiness and want to rule out "did the container just update under
   me" as a variable.
+- Save `WEBUI_SECRET_KEY` in the same protected local `.env` file as the other
+  service secrets before recreating the container. A stable key is required
+  for encrypted Open WebUI state, especially if you later use OAuth-backed
+  MCP connections.
 - First boot takes 30-60 seconds (downloads an embedding model). Poll
   `curl http://localhost:3000/` until you get a `200`.
 
 Go to `http://<jetson-ip>:3000`, complete the first-run signup (this becomes
-your admin account).
+your admin account). Restrict port `3000` to your trusted LAN; use HTTPS and an
+authenticated reverse proxy before allowing access from any untrusted network.
 
 ## 2. Register ProxmoxMCP-Plus as a tool server
 
@@ -35,19 +43,21 @@ your admin account).
 | Field | Value |
 |---|---|
 | Type | **MCP Streamable HTTP** |
-| URL | `http://<jetson-ip>:8000/mcp` |
+| URL | `http://127.0.0.1:8000/mcp` |
 | Auth | Bearer, using the `MCP_API_KEY` from the previous doc |
 
-**This detail matters a lot**: Open WebUI also offers an "OpenAPI" connection
-type, and ProxmoxMCP-Plus's OpenAPI bridge (port 8811) will happily pass its
-"Test Connection" check. But in the Open WebUI version tested here, an
-OpenAPI-type tool server is **never actually invoked by chat completions** —
-the frontend fetches its schema for display but doesn't forward it into the
-request Ollama sees. Only `server:mcp:`-prefixed tool IDs (i.e. genuine MCP
-Streamable HTTP connections) get resolved at request time. This cost a lot
-of debugging time — a green "Connection success" gives no indication that
-the connection type is wrong for actual use. Use MCP Streamable HTTP.
-Full diagnosis: [troubleshooting](06-troubleshooting.md#openapi-vs-mcp).
+**This detail matters for this tested stack**: Open WebUI officially supports
+both OpenAPI tool servers and MCP Streamable HTTP, but the author observed that
+the OpenAPI connection passed "Test Connection" and still was not invoked by
+chat completions on this Open WebUI `0.11.1` + Ollama setup. Native MCP
+Streamable HTTP was verified end-to-end and is therefore the recommended path
+for this guide. Do not treat the observation as a statement that OpenAPI tools
+never work in other Open WebUI environments. Full diagnosis:
+[troubleshooting](06-troubleshooting.md#openapi-vs-mcp).
+For the supported connection types, compare Open WebUI's official
+[MCP documentation](https://docs.openwebui.com/features/extensibility/mcp/)
+and
+[OpenAPI integration documentation](https://docs.openwebui.com/features/extensibility/plugin/tools/openapi-servers/open-webui/).
 
 ## 3. Curate the exposed tools
 
@@ -70,6 +80,11 @@ Two reasons to curate rather than exposing everything:
    [troubleshooting](06-troubleshooting.md#tool-selection-quality) for the
    detail on what we tried.
 
+The filter limits the schemas shown to the model; it does not change the tools
+registered by ProxmoxMCP-Plus and is not an authorization control. Keep the
+Proxmox API token read-only unless you deliberately need mutations, and keep
+`MCP_API_KEY` private.
+
 A reasonable read-only starting set (adjust names to match your
 ProxmoxMCP-Plus version):
 
@@ -89,9 +104,10 @@ worth being aware of as you decide what to add.
 
 - **Tools**: enable your ProxmoxMCP-Plus connection as a default tool for
   this model (so you don't have to toggle it on manually every chat).
-- **Advanced Params → Function Calling: `Legacy`, not `Native`.** This is
-  the single most impactful setting in this whole guide. In the version
-  tested, native function calling has a bug where, after a tool call
+- **Advanced Params → Function Calling: `Legacy`, not `Native`.** This was
+  the single most impactful setting on the tested Open WebUI `0.11.1` +
+  Ollama `0.32.14` stack. In that environment, native function calling had a
+  bug where, after a tool call
   completes, the model's synthesized final answer is silently dropped —
   the tool call visibly succeeds (you see "View Result from ...") but the
   chat response is empty. This reproduced consistently across multiple
@@ -99,9 +115,12 @@ worth being aware of as you decide what to add.
   (bypassing Open WebUI entirely) confirmed Ollama itself returns a
   complete, correct response every time — so it's specifically Open WebUI's
   handling of the native tool-calling response stream. **Legacy mode
-  (prompt-based tool calling) does not have this problem.** It has its own,
-  milder weakness — see the troubleshooting doc — but it's the more
-  reliable choice today.
+  (prompt-based tool calling) did not have this problem in the author's
+  tests.** It has its own, milder weakness — see the troubleshooting doc.
+  Re-test Native mode after upgrades rather than assuming this workaround is
+  permanent. Open WebUI documents both modes and describes Legacy as a
+  compatibility option in its
+  [tool-calling documentation](https://docs.openwebui.com/features/extensibility/plugin/tools/).
 - **System Prompt**: see the template below.
 
 ## 5. System prompt
