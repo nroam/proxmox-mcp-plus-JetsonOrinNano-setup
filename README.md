@@ -20,6 +20,31 @@ own setup and stuck.
 > before publishing. A human reviewed the result and pushed it, but the
 > investigation, fixes, and writing are the model's.
 
+> [!IMPORTANT]
+> This is a community-maintained, version-specific guide. It is not an
+> official ProxmoxMCP-Plus support document or an independent security audit.
+> Review the upstream
+> [Operator Guide](https://github.com/RekklesNA/ProxmoxMCP-Plus/blob/main/docs/wiki/Operator%20Guide.md)
+> and
+> [Security Guide](https://github.com/RekklesNA/ProxmoxMCP-Plus/blob/main/docs/wiki/Security%20Guide.md)
+> before exposing either service outside the Jetson host.
+
+## Tested stack
+
+The original end-to-end validation was completed on 2026-08-27 with:
+
+| Component | Tested version |
+|---|---|
+| ProxmoxMCP-Plus | `v0.5.14` |
+| Open WebUI | `v0.11.1` |
+| Ollama | `0.32.14` |
+| Model | `qwen2.5:7b-instruct-q4_K_M` |
+| Hardware | NVIDIA Jetson Orin Nano, 8GB |
+| JetPack / Proxmox VE | Not recorded during the original validation |
+
+Treat observations about Open WebUI, Ollama, and model behaviour as a snapshot
+of this stack. Re-test the verification steps after upgrading any component.
+
 ## Quick start
 
 1. [Prerequisites](docs/01-prerequisites.md)

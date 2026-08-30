@@ -6,12 +6,18 @@ is what Open WebUI's chat actually uses; the OpenAPI bridge is invaluable for
 testing individual tools with plain `curl` while you debug, independent of
 the LLM.
 
-## 1. Clone and patch the source
+## 1. Clone the tested release
 
 ```bash
 git clone https://github.com/RekklesNA/ProxmoxMCP-Plus.git
 cd ProxmoxMCP-Plus
+git checkout v0.5.14
 ```
+
+Pinning the release makes the guide reproducible. If you intentionally use a
+newer release, review its release notes and repeat every verification step.
+
+## 2. Optional local node-example patch
 
 ProxmoxMCP-Plus's built-in tool descriptions use placeholder example node
 names (`pve`, `pve1`, `proxmox-node2`) in things like:
@@ -29,7 +35,9 @@ are genuinely confusing to debug, because the API token, network, and MCP
 protocol are all working fine — the LLM is just passing a wrong parameter
 value it got from the tool schema itself.
 
-**Fix**: patch these examples to use your real node names before building.
+**Optional workaround**: patch these examples to use your real node names
+before building. First try the explicit system-prompt rule in the Open WebUI
+setup; modify the source only if your model still copies placeholder values.
 [`scripts/patch_tool_descriptions.py`](../scripts/patch_tool_descriptions.py)
 in this repo does this — copy it into the cloned repo and run it:
 
@@ -38,17 +46,18 @@ cp /path/to/this/repo/scripts/patch_tool_descriptions.py .
 python3 patch_tool_descriptions.py node1 node2 node3   # your real node names
 ```
 
-It's a safe, mechanical find-and-replace across the source tree for the
-`pve`/`pve1`/`pve2`/`proxmox-node2` placeholder tokens specifically (using
-word boundaries, so it won't touch unrelated strings like `pveproxy` or
-`pvedaemon`, which are Proxmox service names). Review the diff (`git diff`)
-before building — it's your own patch, and worth a sanity check.
+The script is intentionally limited to the three files that define user-facing
+tool schemas in `v0.5.14`. It refuses missing target files, avoids realm names
+such as `user@pve` and hostnames such as `pve.proxmox.com`, and does not scan
+the rest of the source tree. Even so, it is an environment-specific source
+patch: review `git diff` before building and do not submit the generated node
+names back to the upstream project.
 
 This alone won't make tool selection perfect (see
 [troubleshooting](06-troubleshooting.md#tool-selection-quality)), but it
 removes an entire, very confusing class of failure.
 
-## 2. Reset anything that isn't your patch
+## 3. Reset anything that isn't your patch
 
 If you experiment with the `Dockerfile` or `docker-compose.yml` while
 debugging (many guides suggest editing `ENV` defaults directly), reset them
@@ -62,13 +71,13 @@ See [troubleshooting](06-troubleshooting.md#baked-in-env-vars) for why this
 matters — a baked-in `ENV` override in the image can leak into both run
 modes and break one of them in a very non-obvious way.
 
-## 3. Build
+## 4. Build
 
 ```bash
 docker build -t proxmoxmcp-plus:local .
 ```
 
-## 4. Config file
+## 5. Config file
 
 Create `config.json` (path is up to you — this guide uses
 `~/proxmox-mcp/config.json`):
@@ -76,22 +85,26 @@ Create `config.json` (path is up to you — this guide uses
 ```json
 {
   "mcp": { "transport": "STDIO", "host": "127.0.0.1", "port": 8000 },
-  "proxmox": { "host": "<PROXMOX_HOST_IP>", "port": 8006, "verify_ssl": false },
+  "proxmox": { "host": "<PROXMOX_HOST_IP>", "port": 8006, "verify_ssl": true },
   "auth": {
     "user": "mcp-agent@pve",
     "token_name": "mcp-token",
     "token_value": "<YOUR_TOKEN_VALUE>"
   },
   "jobs": { "sqlite_path": "/app/proxmox-jobs.sqlite3" },
-  "security": { "dev_mode": true }
+  "security": { "dev_mode": false }
 }
 ```
 
 Notes:
 
-- `verify_ssl: false` + `security.dev_mode: true` are needed if your Proxmox
-  host uses its default self-signed certificate. If you have a real cert,
-  set `verify_ssl: true` and drop `dev_mode`.
+- The example keeps TLS verification enabled. Install a certificate trusted by
+  the container for a durable deployment. For an isolated lab that still uses
+  the default self-signed certificate, ProxmoxMCP-Plus permits
+  `verify_ssl: false` only together with `security.dev_mode: true`; this makes
+  the connection vulnerable to interception and must not be used on an
+  untrusted network. See the upstream
+  [Security Guide](https://github.com/RekklesNA/ProxmoxMCP-Plus/blob/main/docs/wiki/Security%20Guide.md).
 - **`mcp.transport: STDIO` is deliberate and important** — leave it as-is.
   This file gets mounted into *both* containers below; `STDIO` is what the
   OpenAPI bridge's internal subprocess needs. The MCP-HTTP container
@@ -100,14 +113,14 @@ Notes:
   [troubleshooting](06-troubleshooting.md#shared-config-transport) if you're
   tempted to change it — it's a trap.
 
-## 5. Run both services
+## 6. Run both services
 
 ```bash
 export PROXMOX_API_KEY=$(openssl rand -hex 32)   # for the OpenAPI bridge
 export MCP_API_KEY=$(openssl rand -hex 32)        # for the MCP server
 
 docker run -d --name proxmox-mcp-http --restart unless-stopped \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -e PROXMOX_MCP_MODE=mcp-http \
   -e MCP_HOST=0.0.0.0 -e MCP_PORT=8000 \
   -e MCP_TRANSPORT=STREAMABLE_HTTP \
@@ -116,7 +129,7 @@ docker run -d --name proxmox-mcp-http --restart unless-stopped \
   proxmoxmcp-plus:local
 
 docker run -d --name proxmox-mcp-openapi --restart unless-stopped \
-  -p 8811:8811 \
+  -p 127.0.0.1:8811:8811 \
   -e PROXMOX_API_KEY="$PROXMOX_API_KEY" \
   -v /path/to/config.json:/app/proxmox-config/config.json:ro \
   proxmoxmcp-plus:local
@@ -126,7 +139,13 @@ Save `$PROXMOX_API_KEY` and `$MCP_API_KEY` somewhere durable (a local `.env`
 file, `chmod 600`, not committed anywhere) — you'll need both again for the
 Open WebUI wiring step.
 
-## 6. Verify
+The host-side ports deliberately bind to `127.0.0.1`. Open WebUI uses host
+networking in the next step, so it can reach them without exposing either API
+to the LAN. If you need remote MCP access, follow the upstream Security Guide
+and configure TLS, ingress restrictions, `MCP_DNS_REBINDING_PROTECTION`,
+`MCP_ALLOWED_HOSTS`, and `MCP_ALLOWED_ORIGINS` before changing the bind address.
+
+## 7. Verify
 
 ```bash
 # OpenAPI bridge — should return {"status":"ok"}

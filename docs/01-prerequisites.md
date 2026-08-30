@@ -27,14 +27,17 @@
 ## Network
 
 - The Jetson needs outbound access to your Proxmox API port (default `8006`).
-- You'll access the chat UI from another machine on your network, so the
-  Jetson's Docker containers need to bind to `0.0.0.0` / host networking
-  rather than `127.0.0.1` — this guide's commands already do that.
+- The MCP and OpenAPI services in this guide bind only to the Jetson's
+  loopback interface. Open WebUI runs with host networking and can reach both
+  at `127.0.0.1`, so they do not need to be exposed to the rest of the LAN.
+- You'll access the chat UI from another machine on your network. Restrict
+  TCP port `3000` to a trusted subnet with the Jetson's firewall. Put Open
+  WebUI behind HTTPS and an authenticated reverse proxy before allowing access
+  from any untrusted network.
 
 ## Proxmox VE
 
 - Admin access to create a scoped API token (see next doc). You do **not**
-  need to use a root token — a purpose-built token with minimal privileges is
-  both safer and, per the troubleshooting notes, actually helps the small LLM
-  behave better (fewer tools it can misuse means fewer places for it to get
-  confused).
+  need to use a root token. A purpose-built, privilege-separated token with
+  read-only permissions is both safer and, per the troubleshooting notes,
+  helps the small LLM behave better.
